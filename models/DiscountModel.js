@@ -1,12 +1,9 @@
 const { getDB } = require("../config/mongoDB");
-
 const Joi = require("joi");
 const { ObjectId } = require("mongodb");
-
-const { AppError } = require("../service/errorHandler");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "discounts";
-
 const COLLECTION_SCHEMA = Joi.object({
   seller_id: Joi.string().required(),
   code: Joi.string().required(),
@@ -30,15 +27,22 @@ const handleDBOperation = async (operation) => {
   try {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
-    console.error(`Error in ${operation.name}: `, error);
-    throw new AppError(error.message, 500);
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
   }
 };
 
 const validateDiscount = (discountData) => {
   const { error } = COLLECTION_SCHEMA.validate(discountData);
   if (error)
-    throw new AppError(error.details.map((d) => d.message).join(", "), 400);
+    throw createError(
+      error.details.map((d) => d.message).join(", "),
+      400,
+      "INVALID_DISCOUNT_DATA"
+    );
 
   if (discountData.type === "flash-sale") {
     validateFlashSaleDiscount(discountData.start_date, discountData.end_date);
@@ -55,17 +59,19 @@ const validateFlashSaleDiscount = (startDate, endDate) => {
     end.getMinutes() !== 0 ||
     end.getSeconds() !== 0
   ) {
-    throw new AppError(
+    throw createError(
       "Flash-sale start and end times must be on the hour",
-      400
+      400,
+      "INVALID_FLASH_SALE_TIME"
     );
   }
 
   const durationHours = (end - start) / (1000 * 60 * 60);
   if (durationHours < 1 || durationHours > 10) {
-    throw new AppError(
+    throw createError(
       "Flash-sale duration must be between 1 and 10 hours",
-      400
+      400,
+      "INVALID_FLASH_SALE_DURATION"
     );
   }
 };
@@ -77,12 +83,19 @@ const DiscountModel = {
       const now = new Date();
       const startDate = new Date(discountData.start_date);
       if (startDate <= now) {
-        throw new AppError("Flash-sale start time must be in the future", 400);
+        throw createError(
+          "Flash-sale start time must be in the future",
+          400,
+          "INVALID_FLASH_SALE_START_TIME"
+        );
       }
     }
     return handleDBOperation(async (collection) => {
       const result = await collection.insertOne(discountData);
-      return result.insertedId;
+      return {
+        message: "Discount created successfully",
+        discountId: result.insertedId,
+      };
     });
   },
 
@@ -93,9 +106,15 @@ const DiscountModel = {
   },
 
   async getDiscountById(discount_id) {
-    return handleDBOperation((collection) =>
-      collection.findOne({ _id: new ObjectId(discount_id) })
-    );
+    return handleDBOperation(async (collection) => {
+      const discount = await collection.findOne({
+        _id: new ObjectId(discount_id),
+      });
+      if (!discount) {
+        throw createError("Discount not found", 404, "DISCOUNT_NOT_FOUND");
+      }
+      return discount;
+    });
   },
 
   async getDiscountsByIds(discount_ids) {
@@ -108,14 +127,19 @@ const DiscountModel = {
   async toggleDiscountStatus(id) {
     return handleDBOperation(async (collection) => {
       const discount = await collection.findOne({ _id: new ObjectId(id) });
-      if (!discount) return null;
+      if (!discount) {
+        throw createError("Discount not found", 404, "DISCOUNT_NOT_FOUND");
+      }
 
       const result = await collection.findOneAndUpdate(
         { _id: new ObjectId(id) },
         { $set: { is_active: !discount.is_active } },
         { returnDocument: "after" }
       );
-      return result.value;
+      return {
+        message: "Discount status toggled successfully",
+        discount: result.value,
+      };
     });
   },
 
@@ -123,7 +147,7 @@ const DiscountModel = {
     return handleDBOperation(async (collection) => {
       const currentDate = new Date();
 
-      await collection.bulkWrite([
+      const result = await collection.bulkWrite([
         {
           updateMany: {
             filter: {
@@ -144,6 +168,10 @@ const DiscountModel = {
           },
         },
       ]);
+      return {
+        message: "Discount statuses updated successfully",
+        modifiedCount: result.modifiedCount,
+      };
     });
   },
 
@@ -158,14 +186,13 @@ const DiscountModel = {
       );
 
       if (result.matchedCount === 0) {
-        throw new Error("Discount not found");
+        throw createError("Discount not found", 404, "DISCOUNT_NOT_FOUND");
       }
 
-      if (result.modifiedCount === 0) {
-        console.log("Product was already in the applicable_products array");
-      }
-
-      return result;
+      return {
+        message: "Discount applied successfully",
+        modifiedCount: result.modifiedCount,
+      };
     });
   },
 
@@ -180,21 +207,23 @@ const DiscountModel = {
       );
 
       if (result.matchedCount === 0) {
-        throw new Error("Discount not found");
+        throw createError("Discount not found", 404, "DISCOUNT_NOT_FOUND");
       }
 
-      if (result.modifiedCount === 0) {
-        console.log("Product was not in the applicable_products array");
-      }
-
-      return result;
+      return {
+        message: "Discount removed successfully",
+        modifiedCount: result.modifiedCount,
+      };
     });
   },
 
   deleteDiscount: async (id) => {
     return handleDBOperation(async (collection) => {
       const result = await collection.deleteOne({ _id: new ObjectId(id) });
-      return result.deletedCount > 0;
+      if (result.deletedCount === 0) {
+        throw createError("Discount not found", 404, "DISCOUNT_NOT_FOUND");
+      }
+      return { message: "Discount deleted successfully" };
     });
   },
 };

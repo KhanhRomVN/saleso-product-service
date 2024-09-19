@@ -2,11 +2,12 @@ const Joi = require("joi");
 const { getDB } = require("../config/mongoDB");
 const { ObjectId } = require("mongodb");
 const DiscountModel = require("./DiscountModel");
+const { FeedbackModel } = require("./FeedbackModel");
 const cron = require("node-cron");
 const { client } = require("../config/elasticsearchClient");
 const { redisClient } = require("../config/redisClient");
-const FeedbackModel = require("./FeedbackModel");
 const REDIS_EXPIRE_TIME = 3600;
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "products";
 const COLLECTION_SCHEMA = Joi.object({
@@ -53,7 +54,7 @@ const handleDBOperation = async (operation) => {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
     console.error(`Error in ${operation.name}: `, error);
-    throw error;
+    throw createError(error.message, 500, "DB_OPERATION_ERROR");
   }
 };
 
@@ -64,8 +65,10 @@ const ProductModel = {
         abortEarly: false,
       });
       if (error) {
-        throw new Error(
-          `Validation error: ${error.details.map((d) => d.message).join(", ")}`
+        throw createError(
+          `Validation error: ${error.details.map((d) => d.message).join(", ")}`,
+          400,
+          "VALIDATION_ERROR"
         );
       }
 
@@ -121,10 +124,15 @@ const ProductModel = {
     }
 
     return handleDBOperation(async (collection) => {
-      if (!ObjectId.isValid(product_id)) throw new Error("Invalid product ID");
+      if (!ObjectId.isValid(product_id))
+        throw createError("Invalid product ID", 400, "INVALID_PRODUCT_ID");
       const product = await collection.findOne({
         _id: new ObjectId(product_id),
       });
+
+      if (!product) {
+        throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
+      }
 
       if (product) {
         await redisClient.set(cacheKey, JSON.stringify(product), {
@@ -248,11 +256,15 @@ const ProductModel = {
   updateProduct: async (product_id, keys, values) =>
     handleDBOperation(async (collection) => {
       if (!ObjectId.isValid(product_id)) {
-        throw new Error("Invalid product ID");
+        throw createError("Invalid product ID", 400, "INVALID_PRODUCT_ID");
       }
 
       if (keys.length !== values.length) {
-        throw new Error("Keys and values arrays must have the same length");
+        throw createError(
+          "Keys and values arrays must have the same length",
+          400,
+          "INVALID_INPUT"
+        );
       }
 
       const updateObj = {};
@@ -268,7 +280,7 @@ const ProductModel = {
       );
 
       if (result.matchedCount === 0) {
-        throw new Error("Product not found");
+        throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
       }
 
       // Update Elasticsearch
@@ -293,12 +305,13 @@ const ProductModel = {
   deleteProduct: async (product_id) =>
     handleDBOperation(async (collection) => {
       if (!ObjectId.isValid(product_id)) {
-        throw new Error("Invalid product ID");
+        throw createError("Invalid product ID", 400, "INVALID_PRODUCT_ID");
       }
       const result = await collection.deleteOne({
         _id: new ObjectId(product_id),
       });
-      if (result.deletedCount === 0) throw new Error("Product not found");
+      if (result.deletedCount === 0)
+        throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
 
       // Delete from Elasticsearch
       await client.delete({

@@ -1,9 +1,10 @@
 const jwt = require("jsonwebtoken");
-const { UserModel } = require("../models");
+const { getUserInfo } = require("../producers/user-info-producer");
+const { createError, sendError } = require("../services/responseHandler");
 
 const verifyToken = (accessToken) => {
   if (!accessToken) {
-    throw new Error("No accessToken provided");
+    throw createError("No accessToken provided", 401, "NO_TOKEN_PROVIDED");
   }
   return jwt.verify(accessToken, process.env.JWT_SECRET_KEY);
 };
@@ -15,51 +16,43 @@ const createAuthMiddleware = (roles) => async (req, res, next) => {
 
     let user = null;
     for (const role of roles) {
-      user = await UserModel.getUserById(decoded.user_id, role);
+      user = await getUserInfo(decoded.user_id, role);
       if (user) break;
     }
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      throw createError("User not found", 404, "USER_NOT_FOUND");
     }
 
     if (!roles.includes(user.role)) {
-      return res.status(403).json({ error: "You are not authorized" });
+      throw createError("You are not authorized", 403, "UNAUTHORIZED_ROLE");
     }
 
     req.user = user;
     next();
   } catch (error) {
     console.error("Error in auth middleware:", error);
-    if (error.message === "No accessToken provided") {
-      return res
-        .status(401)
-        .json({ error: "Unauthorized - No accessToken provided" });
-    }
-    if (error.name === "JsonWebTokenError") {
-      return res
-        .status(401)
-        .json({ error: "Unauthorized - Invalid accessToken" });
-    }
-    res.status(500).json({ error: "Internal server error" });
+    sendError(res, error);
   }
 };
 
 const refreshAccessToken = async (req, res, next) => {
   const refreshToken = req.header("refreshToken");
-  console.log(refreshToken);
 
   if (!refreshToken) {
-    return res.status(401).json({ error: "Refresh token not provided" });
+    return sendError(
+      res,
+      createError("Refresh token not provided", 401, "NO_REFRESH_TOKEN")
+    );
   }
 
   try {
     const decoded = verifyToken(refreshToken, process.env.JWT_SECRET_KEY);
 
-    const user = await UserModel.getUserById(decoded.user_id, decoded.role);
+    const user = await getUserInfo(decoded.user_id, decoded.role);
 
     if (!user || user.refreshToken !== refreshToken) {
-      return res.status(401).json({ error: "Invalid refresh token" });
+      throw createError("Invalid refresh token", 401, "INVALID_REFRESH_TOKEN");
     }
 
     const newAccessToken = jwt.sign(
@@ -74,7 +67,7 @@ const refreshAccessToken = async (req, res, next) => {
       { expiresIn: "7d" }
     );
 
-    await UserModel.updateRefreshToken(user._id, newRefreshToken, user.role);
+    await getUserInfo.updateRefreshToken(user._id, newRefreshToken, user.role);
 
     req.token = {
       accessToken: newAccessToken,
@@ -83,13 +76,7 @@ const refreshAccessToken = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Error in refreshAccessToken:", error);
-    if (error.name === "JsonWebTokenError") {
-      return res.status(401).json({ error: "Invalid refresh token" });
-    }
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({ error: "Refresh token expired" });
-    }
-    res.status(500).json({ error: "Internal server error" });
+    sendError(res, error);
   }
 };
 

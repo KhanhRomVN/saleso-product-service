@@ -1,1 +1,0 @@
-# saleso-product-service

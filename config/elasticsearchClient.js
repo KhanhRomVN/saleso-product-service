@@ -9,9 +9,8 @@ const client = new Client({
 
 const connectElasticsearch = async () => {
   try {
-    console.log(process.env.ELASTICSEARCH_API_KEY);
-    const info = await client.info();
-    console.log("Elasticsearch connected:", info.name);
+    const { name } = await client.info();
+    console.log("Elasticsearch connected:", name);
     return client;
   } catch (error) {
     console.error("Elasticsearch connection error:", error);

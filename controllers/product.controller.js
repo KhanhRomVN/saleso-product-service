@@ -2,10 +2,9 @@ const {
   ProductModel,
   DiscountModel,
   FeedbackModel,
-  ProductAnalyticModel,
   ProductLogModel,
 } = require("../models");
-const logger = require("../config/logger");
+const { handleRequest, createError } = require("../services/responseHandler");
 const { client } = require("../config/elasticsearchClient");
 
 const slugify = (text) => {
@@ -20,63 +19,41 @@ const slugify = (text) => {
     .replace(/-+$/, "");
 };
 
-const handleRequest = async (req, res, operation) => {
-  try {
-    const result = await operation(req);
-    res.status(200).json(result);
-  } catch (error) {
-    logger.error(`Error in ${operation.name}: ${error}`);
-    res
-      .status(error.status || 500)
-      .json({ error: error.message || "Internal Server Error" });
-  }
-};
-
 const checkUserOwnership = async (product_id, seller_id) => {
   const product = await ProductModel.getProductById(product_id);
   if (!product) {
-    const error = new Error("Product not found");
-    error.status = 404;
-    throw error;
+    throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
   }
   if (product.seller_id.toString() !== seller_id.toString()) {
-    const error = new Error("Unauthorized: You don't own this product");
-    error.status = 403;
-    throw error;
+    throw createError(
+      "Unauthorized: You don't own this product",
+      403,
+      "UNAUTHORIZED"
+    );
   }
   return product;
 };
 
 const ProductController = {
-  createProduct: async (req, res) =>
+  createProduct: (req, res) =>
     handleRequest(req, res, async (req) => {
       const productData = req.body;
       const seller_id = req.user._id.toString();
-      // create slug
+
+      if (!productData.name) {
+        throw createError(
+          "Product name is required",
+          400,
+          "MISSING_PRODUCT_NAME"
+        );
+      }
+
       const baseSlug = slugify(productData.name);
       const uniqueSlug = await ProductModel.getUniqueSlug(baseSlug);
       productData.slug = uniqueSlug;
-      // create product
+
       const product = await ProductModel.createProduct(productData, seller_id);
-      // create product analytic
-      const month = currentDate.getMonth() + 1;
-      const year = currentDate.getFullYear();
-      const productAnalyticData = {
-        product_id: product.product_id,
-        year,
-        month,
-        revenue: 0,
-        visitor: 0,
-        wishlist_additions: 0,
-        cart_additions: 0,
-        orders_placed: 0,
-        orders_cancelled: 0,
-        orders_successful: 0,
-        reversal: 0,
-        discount_applications: 0,
-      };
-      await ProductAnalyticModel.newProductAnalytic(productAnalyticData);
-      // create product log
+
       const productLogData = {
         product_id: product.product_id,
         title: "Create new product",
@@ -90,6 +67,9 @@ const ProductController = {
   getProductById: (req, res) =>
     handleRequest(req, res, async (req) => {
       const product = await ProductModel.getProductById(req.params.product_id);
+      if (!product) {
+        throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
+      }
       let discountValue = product.discount_value;
       if (product.ongoing_discounts.length > 0) {
         const discounts = await Promise.all(
@@ -343,6 +323,7 @@ const ProductController = {
   filterProducts: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { value, rating, address, page = 1, limit = 32 } = req.body;
+      console.log(req.body);
 
       const query = {
         bool: {
@@ -465,14 +446,17 @@ const ProductController = {
       };
     }),
 
-  updateProduct: async (req, res) =>
+  updateProduct: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id } = req.params;
       const { keys, values } = req.body;
       const seller_id = req.user._id.toString();
 
-      // Check if the user owns the product
       await checkUserOwnership(product_id, seller_id);
+
+      if (!keys || !values || keys.length !== values.length) {
+        throw createError("Invalid update data", 400, "INVALID_UPDATE_DATA");
+      }
 
       const result = await ProductModel.updateProduct(product_id, keys, values);
       return {
@@ -481,13 +465,12 @@ const ProductController = {
       };
     }),
 
-  toggleActive: async (req, res) =>
+  toggleActive: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id } = req.params;
       const seller_id = req.user._id.toString();
       await checkUserOwnership(product_id, seller_id);
       await ProductModel.toggleActive(product_id);
-      // create product log
       const productLogData = {
         product_id: product_id,
         title: "The seller has changed the active product",
@@ -497,21 +480,24 @@ const ProductController = {
       return { message: "Update active successfully" };
     }),
 
-  addStock: async (req, res) =>
+  addStock: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id } = req.params;
       const { sku, stockValue } = req.body;
       const seller_id = req.user._id.toString();
       await checkUserOwnership(product_id, seller_id);
       if (!Number.isInteger(stockValue) || stockValue <= 0) {
-        throw new Error("Stock value must be a positive integer");
+        throw createError(
+          "Stock value must be a positive integer",
+          400,
+          "INVALID_STOCK_VALUE"
+        );
       }
       const result = await ProductModel.updateStock(
         product_id,
         stockValue,
         sku
       );
-      // create product log
       const productLogData = {
         product_id,
         title: "The seller has added the product to the stock",
@@ -525,28 +511,39 @@ const ProductController = {
       };
     }),
 
-  delStock: async (req, res) =>
+  delStock: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id } = req.params;
       const { sku, stockValue } = req.body;
       const seller_id = req.user._id.toString();
 
-      // Check if the user owns the product
       await checkUserOwnership(product_id, seller_id);
 
       if (!Number.isInteger(stockValue) || stockValue <= 0) {
-        throw new Error("Stock value must be a positive integer");
+        throw createError(
+          "Stock value must be a positive integer",
+          400,
+          "INVALID_STOCK_VALUE"
+        );
       }
 
       const product = await ProductModel.getProductById(product_id);
       const variant = product.variants.find((v) => v.sku === sku);
 
       if (!variant) {
-        throw new Error("SKU not found for this product");
+        throw createError(
+          "SKU not found for this product",
+          404,
+          "SKU_NOT_FOUND"
+        );
       }
 
       if (variant.stock < stockValue) {
-        throw new Error("Insufficient stock to remove");
+        throw createError(
+          "Insufficient stock to remove",
+          400,
+          "INSUFFICIENT_STOCK"
+        );
       }
 
       const result = await ProductModel.updateStock(
@@ -554,11 +551,10 @@ const ProductController = {
         -stockValue,
         sku
       );
-      // create product log
       const productLogData = {
         product_id,
-        title: "The seller has removed the product to the stock",
-        content: `The seller removed ${stockValue} product with an SKU of ${sku} to the stock`,
+        title: "The seller has removed the product from the stock",
+        content: `The seller removed ${stockValue} product with an SKU of ${sku} from the stock`,
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
@@ -568,14 +564,16 @@ const ProductController = {
       };
     }),
 
-  deleteProduct: async (req, res) => {
+  deleteProduct: (req, res) =>
     handleRequest(req, res, async (req) => {
-      await ProductModel.deleteProduct(req.params.product_id);
+      const { product_id } = req.params;
+      const seller_id = req.user._id.toString();
+      await checkUserOwnership(product_id, seller_id);
+      await ProductModel.deleteProduct(product_id);
       return { message: "Product deleted successfully" };
-    });
-  },
+    }),
 
-  refreshProduct: async (req, res) =>
+  refreshProduct: (req, res) =>
     handleRequest(req, res, async (req) => {
       const result = await ProductModel.refreshProduct();
       return result;

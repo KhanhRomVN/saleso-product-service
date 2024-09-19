@@ -1,24 +1,19 @@
-const { FeedbackModel, UserModel, ProductModel } = require("../models");
-const logger = require("../config/logger");
-
-const handleRequest = async (req, res, operation) => {
-  try {
-    const result = await operation(req);
-    res.status(200).json(result);
-  } catch (error) {
-    logger.error(`Error in ${operation.name}: ${error}`);
-    res
-      .status(error.status || 500)
-      .json({ error: error.message || "Internal Server Error" });
-  }
-};
+const { FeedbackModel, ProductModel } = require("../models");
+const { handleRequest, createError } = require("../services/responseHandler");
+const { getUserInfo } = require("../producers/user-info-producer");
 
 const FeedbackController = {
   create: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id, rating, comment, images = [], reply = {} } = req.body;
+      if (!product_id || !rating || !comment) {
+        throw createError("Missing required fields", 400, "MISSING_FIELDS");
+      }
       const customer_id = req.user._id.toString();
       const product = await ProductModel.getProductById(product_id);
+      if (!product) {
+        throw createError("Product not found", 404, "PRODUCT_NOT_FOUND");
+      }
       const seller_id = product.seller_id;
 
       const feedbackData = {
@@ -41,10 +36,20 @@ const FeedbackController = {
     handleRequest(req, res, async (req) => {
       const { feedback_id } = req.params;
       const { comment } = req.body;
+      if (!comment) {
+        throw createError("Comment is required", 400, "MISSING_COMMENT");
+      }
       const seller_id = req.user._id.toString();
       const feedback = await FeedbackModel.getFeedbackById(feedback_id);
+      if (!feedback) {
+        throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
+      }
       if (seller_id !== feedback.seller_id) {
-        throw new Error("Unauthorized to reply to this feedback");
+        throw createError(
+          "Unauthorized to reply to this feedback",
+          403,
+          "UNAUTHORIZED"
+        );
       }
 
       const replyData = {
@@ -64,11 +69,15 @@ const FeedbackController = {
 
       const feedback = await FeedbackModel.getById(feedbackId);
       if (!feedback) {
-        throw new Error("Feedback not found");
+        throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
       }
 
       if (feedback.user_id !== user_id && feedback.owner_id !== user_id) {
-        throw new Error("Unauthorized to delete this feedback");
+        throw createError(
+          "Unauthorized to delete this feedback",
+          403,
+          "UNAUTHORIZED"
+        );
       }
 
       await FeedbackModel.delete(feedbackId);
@@ -88,16 +97,13 @@ const FeedbackController = {
 
       return await Promise.all(
         feedbacks.map(async (feedback) => {
-          const user = await UserModel.getUserById(
-            feedback.customer_id,
-            "customer"
-          );
-          return { ...feedback, username: user.username };
+          const userInfo = await getUserInfo(feedback.customer_id);
+          return { ...feedback, username: userInfo.username };
         })
       );
     }),
 
-  getBySeller: async (req, res) =>
+  getBySeller: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id, customer_id, page = 1, limit = 10 } = req.body;
       const seller_id = req.user._id.toString();
@@ -113,11 +119,8 @@ const FeedbackController = {
       const feedbackList = await FeedbackModel.getBySeller(params);
       return await Promise.all(
         feedbackList.map(async (feedback) => {
-          const user = await UserModel.getUserById(
-            feedback.customer_id,
-            "customer"
-          );
-          return { ...feedback, customer_username: user.username };
+          const userInfo = await getUserInfo(feedback.customer_id);
+          return { ...feedback, customer_username: userInfo.username };
         })
       );
     }),

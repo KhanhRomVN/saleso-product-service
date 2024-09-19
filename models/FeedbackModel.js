@@ -1,6 +1,7 @@
 const Joi = require("joi");
 const { getDB } = require("../config/mongoDB");
 const { ObjectId } = require("mongodb");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "feedbacks";
 const COLLECTION_SCHEMA = Joi.object({
@@ -24,8 +25,11 @@ const handleDBOperation = async (operation) => {
   try {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
-    console.error(`Error in ${operation.name}: `, error);
-    throw error;
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
   }
 };
 
@@ -33,36 +37,66 @@ const FeedbackModel = {
   create: async (feedbackData) =>
     handleDBOperation(async (collection) => {
       const { error } = COLLECTION_SCHEMA.validate(feedbackData);
-      if (error) throw new Error(error.details[0].message);
-      await collection.insertOne(feedbackData);
+      if (error)
+        throw createError(
+          error.details[0].message,
+          400,
+          "INVALID_FEEDBACK_DATA"
+        );
+      const result = await collection.insertOne(feedbackData);
+      return {
+        message: "Feedback created successfully",
+        feedbackId: result.insertedId,
+      };
     }),
 
   reply: async (feedbackId, replyData) =>
     handleDBOperation(async (collection) => {
-      await collection.updateOne(
+      const result = await collection.updateOne(
         { _id: new ObjectId(feedbackId) },
         { $set: { reply: replyData } }
       );
+      if (result.matchedCount === 0) {
+        throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
+      }
+      return { message: "Reply added successfully" };
     }),
 
   delete: async (feedbackId) =>
     handleDBOperation(async (collection) => {
-      await collection.deleteOne({ _id: new ObjectId(feedbackId) });
+      const result = await collection.deleteOne({
+        _id: new ObjectId(feedbackId),
+      });
+      if (result.deletedCount === 0) {
+        throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
+      }
+      return { message: "Feedback deleted successfully" };
     }),
 
   getFeedbackById: async (feedbackId) =>
     handleDBOperation(async (collection) => {
-      return await collection.findOne({ _id: new ObjectId(feedbackId) });
+      const feedback = await collection.findOne({
+        _id: new ObjectId(feedbackId),
+      });
+      if (!feedback) {
+        throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
+      }
+      return feedback;
     }),
 
   getByProduct: async (productId, skip, limit) =>
     handleDBOperation(async (collection) => {
-      return await collection
+      const feedbacks = await collection
         .find({ product_id: productId })
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
         .toArray();
+      return {
+        message: "Feedbacks retrieved successfully",
+        feedbacks,
+        total: await collection.countDocuments({ product_id: productId }),
+      };
     }),
 
   getBySeller: async ({ seller_id, product_id, customer_id, page, limit }) =>
@@ -73,17 +107,23 @@ const FeedbackModel = {
         ...(customer_id && { customer_id }),
       };
       const skip = (page - 1) * limit;
-      return await collection
+      const feedbacks = await collection
         .find(filters)
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
         .toArray();
+      return {
+        message: "Feedbacks retrieved successfully",
+        feedbacks,
+        total: await collection.countDocuments(filters),
+      };
     }),
 
   getAverageRatingForProduct: async (product_id) =>
     handleDBOperation(async (collection) => {
-      if (!ObjectId.isValid(product_id)) throw new Error("Invalid product ID");
+      if (!ObjectId.isValid(product_id))
+        throw createError("Invalid product ID", 400, "INVALID_PRODUCT_ID");
 
       const result = await collection
         .aggregate([
@@ -156,8 +196,11 @@ const FeedbackModel = {
       });
 
       return {
-        ...result[0],
-        ratingDistribution: fullRatingDistribution,
+        message: "Average rating retrieved successfully",
+        data: {
+          ...result[0],
+          ratingDistribution: fullRatingDistribution,
+        },
       };
     }),
 };

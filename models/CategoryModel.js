@@ -1,7 +1,7 @@
 const { getDB } = require("../config/mongoDB");
-
 const Joi = require("joi");
 const { ObjectId } = require("mongodb");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "categories";
 const CATEGORY_SCHEMA = Joi.object({
@@ -17,7 +17,9 @@ const CATEGORY_SCHEMA = Joi.object({
 
 const validateCategory = (categoryData) => {
   const { error } = CATEGORY_SCHEMA.validate(categoryData);
-  if (error) throw error;
+  if (error) {
+    throw createError("Invalid category data", 400, "INVALID_CATEGORY_DATA");
+  }
 };
 
 const handleDBOperation = async (operation) => {
@@ -25,8 +27,11 @@ const handleDBOperation = async (operation) => {
   try {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
-    console.error(`Error in ${operation.name}: `, error);
-    throw error;
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
   }
 };
 
@@ -34,7 +39,11 @@ const CategoryModel = {
   createNewCategoryBranch: async (categoryData) => {
     return handleDBOperation(async (collection) => {
       validateCategory(categoryData);
-      await collection.insertOne(categoryData);
+      const result = await collection.insertOne(categoryData);
+      return {
+        message: "Category created successfully",
+        categoryId: result.insertedId,
+      };
     });
   },
 
@@ -50,7 +59,6 @@ const CategoryModel = {
         level,
       } = categoryData;
 
-      // Insert the new category
       const newCategory = {
         name,
         slug,
@@ -62,10 +70,16 @@ const CategoryModel = {
       const result = await collection.insertOne(newCategory);
       const newCategoryId = result.insertedId.toString();
 
-      // Update the child's parent_id and increase its level
       const childCategory = await collection.findOne({
         _id: new ObjectId(children_id),
       });
+      if (!childCategory) {
+        throw createError(
+          "Child category not found",
+          404,
+          "CHILD_CATEGORY_NOT_FOUND"
+        );
+      }
       const levelDifference = level - childCategory.level + 1;
 
       await collection.updateOne(
@@ -76,7 +90,6 @@ const CategoryModel = {
         }
       );
 
-      // Recursively update levels of all descendants
       const updateDescendantLevels = async (parentId, levelIncrease) => {
         const children = await collection
           .find({ parent_id: parentId })
@@ -93,7 +106,7 @@ const CategoryModel = {
       await updateDescendantLevels(children_id, levelDifference);
 
       return {
-        success: "Category inserted into hierarchy successfully",
+        message: "Category inserted into hierarchy successfully",
         newCategoryId,
       };
     });
@@ -101,10 +114,14 @@ const CategoryModel = {
 
   updateCategory: async (categoryId, categoryUpdate) => {
     return handleDBOperation(async (collection) => {
-      await collection.updateOne(
+      const result = await collection.updateOne(
         { _id: new ObjectId(categoryId) },
         { $set: { ...categoryUpdate, updated_at: new Date() } }
       );
+      if (result.matchedCount === 0) {
+        throw createError("Category not found", 404, "CATEGORY_NOT_FOUND");
+      }
+      return { message: "Category updated successfully" };
     });
   },
 
@@ -114,10 +131,9 @@ const CategoryModel = {
         _id: new ObjectId(categoryId),
       });
       if (!category) {
-        throw new Error("Category not found");
+        throw createError("Category not found", 404, "CATEGORY_NOT_FOUND");
       }
 
-      // Remove the category from its parent's children array
       if (category.parent_id) {
         await collection.updateOne(
           { _id: new ObjectId(category.parent_id) },
@@ -125,16 +141,13 @@ const CategoryModel = {
         );
       }
 
-      // Update children's parent_id to the deleted category's parent_id
       await collection.updateMany(
         { parent_id: categoryId },
         { $set: { parent_id: category.parent_id } }
       );
 
-      // Delete the category
       await collection.deleteOne({ _id: new ObjectId(categoryId) });
 
-      // Recursively delete all descendants
       const deleteDescendants = async (parentId) => {
         const children = await collection
           .find({ parent_id: parentId })
@@ -146,6 +159,7 @@ const CategoryModel = {
       };
 
       await deleteDescendants(categoryId);
+      return { message: "Category and its descendants deleted successfully" };
     });
   },
 
@@ -177,7 +191,7 @@ const CategoryModel = {
 
         result.push({
           category_id: currentCategoryId,
-          category_name: category.name, // Assuming the name field exists in your category document
+          category_name: category.name,
         });
         currentCategoryId = category.parent_id;
       }

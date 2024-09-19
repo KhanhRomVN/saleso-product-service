@@ -1,17 +1,5 @@
 const { CategoryModel } = require("../models");
-const logger = require("../config/logger");
-
-const handleRequest = async (req, res, operation) => {
-  try {
-    const result = await operation(req);
-    res.status(200).json(result);
-  } catch (error) {
-    logger.error(`Error in ${operation.name}: ${error}`);
-    res
-      .status(error.status || 500)
-      .json({ error: error.message || "Internal Server Error" });
-  }
-};
+const { handleRequest, createError } = require("../services/responseHandler");
 
 // Create one more function to create slug from name
 const createSlug = (name) => {
@@ -26,6 +14,9 @@ const CategoryController = {
     handleRequest(req, res, async (req) => {
       // image_uri, description are 2 optional value keys
       const { name, image_uri, description, parent_id, level } = req.body;
+      if (!name || !parent_id || !level) {
+        throw createError("Missing required fields", 400, "MISSING_FIELDS");
+      }
       const slug = createSlug(name);
       const categoryData = {
         name,
@@ -36,19 +27,16 @@ const CategoryController = {
         level,
       };
       await CategoryModel.createNewCategoryBranch(categoryData);
-      return { success: "Create category successful" };
+      return { message: "Create category successful" };
     }),
 
   insertCategoryIntoHierarchy: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { name, image_uri, description, parent_id, level, children_id } =
         req.body;
-
-      // Validate input
       if (!name || !parent_id || !level || !children_id) {
-        throw { status: 400, message: "Missing required fields" };
+        throw createError("Missing required fields", 400, "MISSING_FIELDS");
       }
-
       const slug = createSlug(name);
       const categoryData = {
         name,
@@ -59,9 +47,8 @@ const CategoryController = {
         level,
         children_id,
       };
-
       await CategoryModel.insertCategoryIntoHierarchy(categoryData);
-      return { success: "Category inserted into hierarchy successfully" };
+      return { message: "Category inserted into hierarchy successfully" };
     }),
 
   updateCategory: (req, res) =>
@@ -69,23 +56,20 @@ const CategoryController = {
       const { category_id } = req.params;
       const { name, image_uri, description } = req.body;
       const categoryUpdate = { image_uri, description };
-
       if (name) {
         const slug = createSlug(name);
         categoryUpdate.name = name;
         categoryUpdate.slug = slug;
       }
-
       await CategoryModel.updateCategory(category_id, categoryUpdate);
-      return { success: "Update category successful" };
+      return { message: "Update category successful" };
     }),
 
   deleteCategory: (req, res) =>
     handleRequest(req, res, async (req) => {
-      // delete the category children that are children of the category just deleted
       const { category_id } = req.params;
       await CategoryModel.deleteCategory(category_id);
-      return { success: "Delete category successful" };
+      return { message: "Delete category successful" };
     }),
 
   getAllCategoriesByLevel: (req, res) =>

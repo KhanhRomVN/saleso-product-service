@@ -1,48 +1,64 @@
-const logger = require("../config/logger");
 const { VariantModel } = require("../models");
-
-const handleRequest = async (req, res, operation) => {
-  try {
-    const result = await operation(req);
-    res.status(200).json(result);
-  } catch (error) {
-    logger.error(`Error in ${operation.name}: ${error}`);
-    res
-      .status(error.status || 500)
-      .json({ error: error.message || "Internal Server Error" });
-  }
-};
+const { handleRequest, createError } = require("../services/responseHandler");
 
 const VariantController = {
   newVariant: (req, res) =>
     handleRequest(req, res, async (req) => {
       const variantData = req.body;
-      return await VariantModel.newVariant(variantData);
+      if (!variantData || Object.keys(variantData).length === 0) {
+        throw createError(
+          "Variant data is required",
+          400,
+          "MISSING_VARIANT_DATA"
+        );
+      }
+      const result = await VariantModel.newVariant(variantData);
+      return { message: "Variant created successfully", variant: result };
     }),
 
   bulkCreateVariants: (req, res) =>
     handleRequest(req, res, async (req) => {
       const variantsData = req.body;
-      return await VariantModel.bulkCreateVariants(variantsData);
+      if (!Array.isArray(variantsData) || variantsData.length === 0) {
+        throw createError(
+          "Invalid variants data",
+          400,
+          "INVALID_VARIANTS_DATA"
+        );
+      }
+      const result = await VariantModel.bulkCreateVariants(variantsData);
+      return { message: "Variants created successfully", count: result.length };
     }),
 
   getVariantBySku: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { sku } = req.params;
-      return await VariantModel.getVariantBySku(sku);
+      if (!sku) {
+        throw createError("SKU is required", 400, "MISSING_SKU");
+      }
+      const variant = await VariantModel.getVariantBySku(sku);
+      if (!variant) {
+        throw createError("Variant not found", 404, "VARIANT_NOT_FOUND");
+      }
+      return variant;
     }),
 
   getVariantByCategory: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { category_id } = req.params;
+      if (!category_id) {
+        throw createError(
+          "Category ID is required",
+          400,
+          "MISSING_CATEGORY_ID"
+        );
+      }
       const variants = await VariantModel.getVariantByCategory(category_id);
 
-      // Step 1: Remove categories array from each object
       const variantsWithoutCategories = variants.map(
         ({ categories, ...rest }) => rest
       );
 
-      // Step 2: Group variants by their "group" property
       const groupedVariants = variantsWithoutCategories.reduce(
         (acc, variant) => {
           if (!acc[variant.group]) {
@@ -54,33 +70,82 @@ const VariantController = {
         {}
       );
 
-      // Convert the grouped object to an array of arrays
       return Object.values(groupedVariants);
     }),
 
   getVariantByGroup: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { group } = req.params;
-      return await VariantModel.getVariantByGroup(group);
+      if (!group) {
+        throw createError("Group is required", 400, "MISSING_GROUP");
+      }
+      const variants = await VariantModel.getVariantByGroup(group);
+      if (variants.length === 0) {
+        throw createError(
+          "No variants found for this group",
+          404,
+          "NO_VARIANTS_FOUND"
+        );
+      }
+      return variants;
     }),
 
   updateVariant: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { sku } = req.params;
       const updateData = req.body;
-      return await VariantModel.updateVariant(sku, updateData);
+      if (!sku) {
+        throw createError("SKU is required", 400, "MISSING_SKU");
+      }
+      if (!updateData || Object.keys(updateData).length === 0) {
+        throw createError(
+          "Update data is required",
+          400,
+          "MISSING_UPDATE_DATA"
+        );
+      }
+      const result = await VariantModel.updateVariant(sku, updateData);
+      if (!result) {
+        throw createError(
+          "Variant not found or update failed",
+          404,
+          "UPDATE_FAILED"
+        );
+      }
+      return { message: "Variant updated successfully", variant: result };
     }),
 
   deleteGroup: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { group } = req.params;
-      return await VariantModel.deleteGroup(group);
+      if (!group) {
+        throw createError("Group is required", 400, "MISSING_GROUP");
+      }
+      const result = await VariantModel.deleteGroup(group);
+      if (result.deletedCount === 0) {
+        throw createError(
+          "No variants found for this group",
+          404,
+          "NO_VARIANTS_FOUND"
+        );
+      }
+      return {
+        message: "Group deleted successfully",
+        deletedCount: result.deletedCount,
+      };
     }),
 
   deleteVariant: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { sku } = req.params;
-      return await VariantModel.deleteVariant(sku);
+      if (!sku) {
+        throw createError("SKU is required", 400, "MISSING_SKU");
+      }
+      const result = await VariantModel.deleteVariant(sku);
+      if (!result) {
+        throw createError("Variant not found", 404, "VARIANT_NOT_FOUND");
+      }
+      return { message: "Variant deleted successfully" };
     }),
 };
 

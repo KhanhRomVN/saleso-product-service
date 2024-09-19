@@ -7,19 +7,26 @@ const compression = require("compression");
 const cors = require("cors");
 const http = require("http");
 
-// const { connectElasticsearch } = require("./config/elasticsearchClient");
-
 //* Redis
 const { connectRedis } = require("./config/redisClient");
 
+//* Elasticsearch
+const { connectElasticsearch } = require("./config/elasticsearchClient");
+
 //* MongoDB
 const { connectDB } = require("./config/mongoDB");
+
+//* RabbitMQ
+const { connectRabbitMQ } = require("./config/rabbitmq");
 
 //* Routes
 const routes = require("./routes");
 
 //* Error Handling Middleware
-const { errorHandler } = require("./middleware/errorHandler");
+const { sendError } = require("./services/responseHandler");
+
+//* Product Consumer
+const { startProductConsumer } = require("./consumers/product-consumer");
 
 //* CORS Configuration
 const whiteList = process.env.WHITE_LIST.split(",");
@@ -56,18 +63,35 @@ Object.entries(routes).forEach(([path, router]) => {
 });
 
 //* Error Handling Middleware
-app.use(errorHandler);
+app.use((err, res) => {
+  sendError(res, err);
+});
+
+const {
+  startProductInfoConsumer,
+} = require("./consumers/product-info-consumer");
+const {
+  startVariantInfoConsumer,
+} = require("./consumers/variant-info-consumer");
 
 //* Start Server
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8084;
 
-Promise.all([connectDB(), connectRedis()])
+Promise.all([
+  connectDB(),
+  connectRedis(),
+  connectRabbitMQ(),
+  connectElasticsearch(),
+])
   .then(() => {
     server.listen(PORT, () => {
       console.log(`Server is running on port: ${PORT}`);
     });
+    startProductInfoConsumer();
+    startVariantInfoConsumer();
+    startProductConsumer();
   })
   .catch((err) => {
-    console.error("Failed to connect to database or Redis", err);
+    console.error("Failed to connect to database, Redis, or RabbitMQ", err);
     process.exit(1);
   });

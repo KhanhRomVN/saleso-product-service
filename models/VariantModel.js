@@ -1,6 +1,7 @@
 const Joi = require("joi");
 const { getDB } = require("../config/mongoDB");
 const { ObjectId } = require("mongodb");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "variants";
 const COLLECTION_SCHEMA = Joi.object({
@@ -16,7 +17,7 @@ const handleDBOperation = async (operation) => {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
     console.error(`Error in ${operation.name}: `, error);
-    throw error;
+    throw createError(error.message, 500, "DB_OPERATION_ERROR");
   }
 };
 
@@ -25,8 +26,10 @@ const VariantModel = {
     handleDBOperation(async (collection) => {
       const { error } = COLLECTION_SCHEMA.validate(variantData);
       if (error)
-        throw new Error(
-          `Validation error: ${error.details.map((d) => d.message).join(", ")}`
+        throw createError(
+          `Validation error: ${error.details.map((d) => d.message).join(", ")}`,
+          400,
+          "VALIDATION_ERROR"
         );
 
       await collection.insertOne(variantData);
@@ -37,8 +40,10 @@ const VariantModel = {
       const validatedData = variantsData.map((variant) => {
         const { error } = COLLECTION_SCHEMA.validate(variant);
         if (error) {
-          throw new Error(
-            `Validation error for SKU ${variant.sku}: ${error.details.map((d) => d.message).join(", ")}`
+          throw createError(
+            `Validation error for SKU ${variant.sku}: ${error.details.map((d) => d.message).join(", ")}`,
+            400,
+            "VALIDATION_ERROR"
           );
         }
         return variant;
@@ -50,19 +55,36 @@ const VariantModel = {
 
   getVariantBySku: async (sku) =>
     handleDBOperation(async (collection) => {
-      return await collection.findOne({ sku: sku });
+      const variant = await collection.findOne({ sku: sku });
+      if (!variant)
+        throw createError("Variant not found", 404, "VARIANT_NOT_FOUND");
+      return variant;
     }),
 
   getVariantByCategory: async (category_id) =>
     handleDBOperation(async (collection) => {
-      return await collection
+      const variants = await collection
         .find({ categories: { $in: [category_id] } })
         .toArray();
+      if (variants.length === 0)
+        throw createError(
+          "No variants found for this category",
+          404,
+          "NO_VARIANTS_FOUND"
+        );
+      return variants;
     }),
 
   getVariantByGroup: async (group) =>
     handleDBOperation(async (collection) => {
-      return await collection.find({ group: group }).toArray();
+      const variants = await collection.find({ group: group }).toArray();
+      if (variants.length === 0)
+        throw createError(
+          "No variants found for this group",
+          404,
+          "NO_VARIANTS_FOUND"
+        );
+      return variants;
     }),
 
   updateVariant: async (sku, updateData) =>
@@ -71,26 +93,38 @@ const VariantModel = {
         allowUnknown: true,
       });
       if (error)
-        throw new Error(
-          `Validation error: ${error.details.map((d) => d.message).join(", ")}`
+        throw createError(
+          `Validation error: ${error.details.map((d) => d.message).join(", ")}`,
+          400,
+          "VALIDATION_ERROR"
         );
 
       const result = await collection.updateOne(
         { sku: sku },
         { $set: updateData }
       );
+      if (result.matchedCount === 0)
+        throw createError("Variant not found", 404, "VARIANT_NOT_FOUND");
       return result.modifiedCount;
     }),
 
   deleteGroup: async (group) =>
     handleDBOperation(async (collection) => {
       const result = await collection.deleteMany({ group: group });
+      if (result.deletedCount === 0)
+        throw createError(
+          "No variants found for this group",
+          404,
+          "NO_VARIANTS_FOUND"
+        );
       return result.deletedCount;
     }),
 
   deleteVariant: async (sku) =>
     handleDBOperation(async (collection) => {
       const result = await collection.deleteOne({ sku: sku });
+      if (result.deletedCount === 0)
+        throw createError("Variant not found", 404, "VARIANT_NOT_FOUND");
       return result.deletedCount;
     }),
 };

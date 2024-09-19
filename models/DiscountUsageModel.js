@@ -1,10 +1,9 @@
 const { getDB } = require("../config/mongoDB");
 const Joi = require("joi");
 const { ObjectId } = require("mongodb");
-const { AppError } = require("../service/errorHandler");
+const { createError } = require("../services/responseHandler");
 
 const COLLECTION_NAME = "discount_usage";
-
 const COLLECTION_SCHEMA = Joi.object({
   customer_id: Joi.string().required(),
   discount_id: Joi.string().required(),
@@ -18,8 +17,11 @@ const handleDBOperation = async (operation) => {
   try {
     return await operation(db.collection(COLLECTION_NAME));
   } catch (error) {
-    console.error(`Error in ${operation.name}: `, error);
-    throw new AppError(error.message, 500);
+    throw createError(
+      `Database operation failed: ${error.message}`,
+      500,
+      "DB_OPERATION_FAILED"
+    );
   }
 };
 
@@ -28,9 +30,10 @@ const DiscountUsageModel = {
     return handleDBOperation(async (collection) => {
       const { error, value } = COLLECTION_SCHEMA.validate(data);
       if (error) {
-        throw new AppError(
+        throw createError(
           error.details.map((detail) => detail.message).join(", "),
-          400
+          400,
+          "INVALID_DISCOUNT_USAGE_DATA"
         );
       }
 
@@ -40,17 +43,24 @@ const DiscountUsageModel = {
       });
 
       if (!result.insertedId) {
-        throw new AppError("Failed to insert discount usage", 500);
+        throw createError(
+          "Failed to insert discount usage",
+          500,
+          "INSERT_FAILED"
+        );
       }
 
-      return { id: result.insertedId, ...value };
+      return {
+        message: "Discount usage created successfully",
+        discountUsage: { id: result.insertedId, ...value },
+      };
     });
   },
 
   async getDiscountUsage(discount_id, limit = 10) {
     return handleDBOperation(async (collection) => {
       if (!ObjectId.isValid(discount_id)) {
-        throw new AppError("Invalid discount_id", 400);
+        throw createError("Invalid discount_id", 400, "INVALID_DISCOUNT_ID");
       }
 
       const usages = await collection
@@ -58,10 +68,62 @@ const DiscountUsageModel = {
         .limit(limit)
         .toArray();
 
-      return usages.map((usage) => ({
-        ...usage,
-        _id: usage._id.toString(),
-      }));
+      return {
+        message: "Discount usages retrieved successfully",
+        usages: usages.map((usage) => ({
+          ...usage,
+          _id: usage._id.toString(),
+        })),
+      };
+    });
+  },
+
+  async getDiscountUsageByCustomer(customer_id, discount_id) {
+    return handleDBOperation(async (collection) => {
+      if (!ObjectId.isValid(discount_id)) {
+        throw createError("Invalid discount_id", 400, "INVALID_DISCOUNT_ID");
+      }
+
+      const usage = await collection.findOne({
+        customer_id,
+        discount_id: new ObjectId(discount_id),
+      });
+
+      if (!usage) {
+        return {
+          message: "No discount usage found for this customer and discount",
+        };
+      }
+
+      return {
+        message: "Discount usage retrieved successfully",
+        usage: {
+          ...usage,
+          _id: usage._id.toString(),
+        },
+      };
+    });
+  },
+
+  async deleteDiscountUsage(usage_id) {
+    return handleDBOperation(async (collection) => {
+      if (!ObjectId.isValid(usage_id)) {
+        throw createError("Invalid usage_id", 400, "INVALID_USAGE_ID");
+      }
+
+      const result = await collection.deleteOne({
+        _id: new ObjectId(usage_id),
+      });
+
+      if (result.deletedCount === 0) {
+        throw createError(
+          "Discount usage not found",
+          404,
+          "DISCOUNT_USAGE_NOT_FOUND"
+        );
+      }
+
+      return { message: "Discount usage deleted successfully" };
     });
   },
 };
