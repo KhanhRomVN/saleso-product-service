@@ -1,7 +1,6 @@
 const { CategoryModel } = require("../models");
 const { handleRequest, createError } = require("../services/responseHandler");
 
-// Create one more function to create slug from name
 const createSlug = (name) => {
   return name
     .toLowerCase()

@@ -1,6 +1,6 @@
 const { FeedbackModel, ProductModel } = require("../models");
+const { getUserById } = require("../queue/producers/user-producer");
 const { handleRequest, createError } = require("../services/responseHandler");
-const { getUserInfo } = require("../producers/user-info-producer");
 
 const FeedbackController = {
   create: (req, res) =>
@@ -97,7 +97,7 @@ const FeedbackController = {
 
       return await Promise.all(
         feedbacks.map(async (feedback) => {
-          const userInfo = await getUserInfo(feedback.customer_id);
+          const userInfo = await getUserById(feedback.customer_id);
           return { ...feedback, username: userInfo.username };
         })
       );
@@ -119,7 +119,7 @@ const FeedbackController = {
       const feedbackList = await FeedbackModel.getBySeller(params);
       return await Promise.all(
         feedbackList.map(async (feedback) => {
-          const userInfo = await getUserInfo(feedback.customer_id);
+          const userInfo = await getUserById(feedback.customer_id);
           return { ...feedback, customer_username: userInfo.username };
         })
       );

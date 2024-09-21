@@ -1,5 +1,5 @@
 {
-  "name": "salesoBE",
+  "name": "saleso-product-service",
   "version": "2.5.7",
   "description": "Saleso Shopping And Social Media Project Backend Using Nodejs, MongoDB, Express",
   "main": "server.js",

@@ -92,6 +92,7 @@ const ProductController = {
   getProductsBySellerId: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { minimum = false } = req.body;
+      console.log(req.user);
       const products = await ProductModel.getListProductBySellerId(
         req.user._id.toString()
       );
