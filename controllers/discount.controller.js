@@ -1,4 +1,10 @@
 const { DiscountModel, ProductModel, ProductLogModel } = require("../models");
+const {
+  sendGetAllowNotificationPreference,
+} = require("../queue/producers/notification-preference-producer");
+const {
+  sendCreateNewNotification,
+} = require("../queue/producers/notification-producer");
 const { handleRequest, createError } = require("../services/responseHandler");
 
 const determineDiscountStatus = (start_date, end_date) => {
@@ -35,6 +41,31 @@ const DiscountController = {
       );
       discountData.is_active = true;
       await DiscountModel.createDiscount(discountData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(
+          req.user._id.toString(),
+          req.user.role
+        );
+      // create notification
+      if (allow_notification_preferences.discount_notification) {
+        const notificationData = {
+          title: "New Discount Created",
+          content: `You has created a new discount`,
+          notification_type: "discount_notification",
+          target_type: "individual",
+          target_ids: [req.user._id.toString()],
+          related: {
+            path: `/discount`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
+
       return { message: "Discount created successfully" };
     }),
 
@@ -63,6 +94,31 @@ const DiscountController = {
           "TOGGLE_FAILED"
         );
       }
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(
+          req.user._id.toString(),
+          req.user.role
+        );
+
+      // create notification
+      if (allow_notification_preferences.discount_notification) {
+        const notificationData = {
+          title: "Discount Status Toggled",
+          content: `The seller [${req.user._id.toString()}] has toggled the status of discount [${discount_id}]`,
+          notification_type: "discount_notification",
+          target_type: "individual",
+          target_ids: [req.user._id.toString()],
+          related: {
+            path: `/discount`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return { message: "Discount status toggled successfully" };
     }),
 
@@ -90,6 +146,27 @@ const DiscountController = {
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(
+          req.user._id.toString(),
+          req.user.role
+        );
+      // create notification
+      if (allow_notification_preferences.discount_notification) {
+        const notificationData = {
+          title: "Discount Applied",
+          content: `The seller [${req.user._id.toString()}] has applied discount [${discount_id}] to product`,
+          notification_type: "discount_notification",
+          target_type: "individual",
+          target_ids: [req.user._id.toString()],
+          can_delete: true,
+          can_mark_as_read: false,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return { message: "Discount applied successfully" };
     }),
 
@@ -117,6 +194,28 @@ const DiscountController = {
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(
+          req.user._id.toString(),
+          req.user.role
+        );
+      // create notification
+      if (allow_notification_preferences.discount_notification) {
+        const notificationData = {
+          title: "Discount Removed",
+          content: `The seller [${req.user._id.toString()}] has removed discount [${discount_id}] from product`,
+          notification_type: "discount_notification",
+          target_type: "individual",
+          target_ids: [req.user._id.toString()],
+          can_delete: true,
+          can_mark_as_read: false,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
+
       return { message: "Discount removed successfully" };
     }),
 
@@ -126,6 +225,27 @@ const DiscountController = {
       const result = await DiscountModel.deleteDiscount(req.params.discount_id);
       if (!result) {
         throw createError("Failed to delete discount", 400, "DELETE_FAILED");
+      }
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(
+          req.user._id.toString(),
+          req.user.role
+        );
+      // create notification
+      if (allow_notification_preferences.discount_notification) {
+        const notificationData = {
+          title: "Discount Deleted",
+          content: `The seller [${req.user._id.toString()}] has deleted discount [${req.params.discount_id}]`,
+          notification_type: "discount_notification",
+          target_type: "individual",
+          target_ids: [req.user._id.toString()],
+          can_delete: true,
+          can_mark_as_read: false,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
       }
       return { message: "Discount deleted successfully" };
     }),

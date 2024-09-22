@@ -3,6 +3,7 @@ const ProductLogModel = require("./models/ProductLogModel");
 const CategoryModel = require("./models/CategoryModel");
 const FeedbackModel = require("./models/FeedbackModel");
 const DiscountModel = require("./models/DiscountModel");
+const DiscountUsageModel = require("./models/DiscountUsageModel");
 const VariantModel = require("./models/VariantModel");
 
 module.exports = {
@@ -11,5 +12,6 @@ module.exports = {
   CategoryModel,
   FeedbackModel,
   DiscountModel,
+  DiscountUsageModel,
   VariantModel,
 };

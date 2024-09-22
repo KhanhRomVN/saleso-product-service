@@ -4,6 +4,12 @@ const {
   FeedbackModel,
   ProductLogModel,
 } = require("../models");
+const {
+  sendGetAllowNotificationPreference,
+} = require("../queue/producers/notification-preference-producer");
+const {
+  sendCreateNewNotification,
+} = require("../queue/producers/notification-producer");
 const { handleRequest, createError } = require("../services/responseHandler");
 const { client } = require("../config/elasticsearchClient");
 
@@ -54,6 +60,7 @@ const ProductController = {
 
       const product = await ProductModel.createProduct(productData, seller_id);
 
+      // product log
       const productLogData = {
         product_id: product.product_id,
         title: "Create new product",
@@ -61,6 +68,29 @@ const ProductController = {
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, req.user.role);
+      // create notification
+      if (allow_notification_preferences.product_notification) {
+        const notificationData = {
+          title: "New Product Created",
+          content: `A new product has been created with the name: ${productData.name}`,
+          notification_type: "product_notification",
+          target_type: "individual",
+          target_ids: [seller_id],
+          related: {
+            path: `/product/management`,
+          },
+          can_delete: false,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
+
       return { message: "Create product successfully" };
     }),
 
@@ -472,12 +502,34 @@ const ProductController = {
       const seller_id = req.user._id.toString();
       await checkUserOwnership(product_id, seller_id);
       await ProductModel.toggleActive(product_id);
+      // product log
       const productLogData = {
         product_id: product_id,
         title: "The seller has changed the active product",
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, req.user.role);
+      // create notification
+      if (allow_notification_preferences.product_notification) {
+        const notificationData = {
+          title: "Product Active Changed",
+          content: `The seller has changed the active product with id-[${product_id}]`,
+          notification_type: "product_notification",
+          target_type: "individual",
+          target_ids: [seller_id],
+          related: {
+            path: `/product/management`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return { message: "Update active successfully" };
     }),
 
@@ -499,6 +551,7 @@ const ProductController = {
         stockValue,
         sku
       );
+      // product log
       const productLogData = {
         product_id,
         title: "The seller has added the product to the stock",
@@ -506,6 +559,27 @@ const ProductController = {
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, req.user.role);
+      // create notification
+      if (allow_notification_preferences.product_notification) {
+        const notificationData = {
+          title: "Product Stock Changed",
+          content: `The seller added ${stockValue} product with an SKU of ${sku} to the stock`,
+          notification_type: "product_notification",
+          target_type: "individual",
+          target_ids: [seller_id],
+          related: {
+            path: `/product/management`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return {
         message: "Stock added successfully",
         modifiedCount: result.modifiedCount,
@@ -552,6 +626,7 @@ const ProductController = {
         -stockValue,
         sku
       );
+      // product log
       const productLogData = {
         product_id,
         title: "The seller has removed the product from the stock",
@@ -559,6 +634,27 @@ const ProductController = {
         created_at: new Date(),
       };
       await ProductLogModel.createLog(productLogData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, req.user.role);
+      // create notification
+      if (allow_notification_preferences.product_notification) {
+        const notificationData = {
+          title: "Product Stock Changed",
+          content: `The seller removed ${stockValue} product with an SKU of ${sku} from the stock`,
+          notification_type: "product_notification",
+          target_type: "individual",
+          target_ids: [seller_id],
+          related: {
+            path: `/product/management`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return {
         message: "Stock removed successfully",
         modifiedCount: result.modifiedCount,

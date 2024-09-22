@@ -41,6 +41,41 @@ const startGetProductByIdConsumer = async () => {
   }
 };
 
+const startUpdateStockConsumer = async () => {
+  let connection;
+  let channel;
+  try {
+    connection = await amqp.connect(process.env.RABBITMQ_URL);
+    channel = await connection.createChannel();
+    const queue = "update_stock_queue";
+
+    await channel.assertQueue(queue, { durable: false });
+    console.log(`[Product Service] Waiting for messages in ${queue}`);
+
+    channel.consume(queue, async (msg) => {
+      const { productId, stockValue, sku, session } = JSON.parse(
+        msg.content.toString()
+      );
+      try {
+        const result = await ProductModel.updateStock(
+          productId,
+          stockValue,
+          sku,
+          session
+        );
+        console.log("Stock updated successfully:", result);
+      } catch (error) {
+        console.error("Error updating stock:", error);
+      }
+    });
+  } catch (error) {
+    console.error("Error in updateStockConsumer:", error);
+    if (channel) await channel.close();
+    if (connection) await connection.close();
+  }
+};
+
 module.exports = {
   startGetProductByIdConsumer,
+  startUpdateStockConsumer,
 };

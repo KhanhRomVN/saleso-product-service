@@ -302,6 +302,15 @@ const ProductModel = {
       };
     }),
 
+  updateStock: async (product_id, stockValue, sku, session = null) =>
+    handleDBOperation(async (collection) => {
+      await collection.updateOne(
+        { _id: new ObjectId(product_id), "variants.sku": sku },
+        { $inc: { "variants.$.stock": stockValue } },
+        { session }
+      );
+    }),
+
   deleteProduct: async (product_id) =>
     handleDBOperation(async (collection) => {
       if (!ObjectId.isValid(product_id)) {

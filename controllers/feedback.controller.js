@@ -1,6 +1,13 @@
 const { FeedbackModel, ProductModel } = require("../models");
 const { getUserById } = require("../queue/producers/user-producer");
+const {
+  sendGetAllowNotificationPreference,
+} = require("../queue/producers/notification-preference-producer");
+const {
+  sendCreateNewNotification,
+} = require("../queue/producers/notification-producer");
 const { handleRequest, createError } = require("../services/responseHandler");
+const { trusted } = require("mongoose");
 
 const FeedbackController = {
   create: (req, res) =>
@@ -29,6 +36,27 @@ const FeedbackController = {
       };
 
       await FeedbackModel.create(feedbackData);
+      // [ get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, "seller");
+      // create notification
+      if (allow_notification_preferences.feedback_notification) {
+        const notificationData = {
+          title: "New Feedback",
+          content: `The customer [${customer_id}] has left a feedback on your product [${product_id}]`,
+          notification_type: "feedback_notification",
+          target_type: "individual",
+          target_ids: [seller_id],
+          related: {
+            path: `/feedback`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return { message: "Feedback created successfully" };
     }),
 
@@ -41,6 +69,7 @@ const FeedbackController = {
       }
       const seller_id = req.user._id.toString();
       const feedback = await FeedbackModel.getFeedbackById(feedback_id);
+      const customer_id = feedback.customer_id;
       if (!feedback) {
         throw createError("Feedback not found", 404, "FEEDBACK_NOT_FOUND");
       }
@@ -59,6 +88,27 @@ const FeedbackController = {
       };
 
       await FeedbackModel.reply(feedback_id, replyData);
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, "seller");
+      // create notification
+      if (allow_notification_preferences.feedback_notification) {
+        const notificationData = {
+          title: "Reply to Feedback",
+          content: `The seller [${seller_id}] has replied to your feedback on product [${product_id}]`,
+          notification_type: "feedback_notification",
+          target_type: "individual",
+          target_ids: [customer_id],
+          related: {
+            path: `/product/${product_id}`,
+          },
+          can_delete: true,
+          can_mark_as_read: true,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
       return { message: "Feedback replied successfully" };
     }),
 
@@ -79,6 +129,30 @@ const FeedbackController = {
           "UNAUTHORIZED"
         );
       }
+      // get allow notification preferences
+      const allow_notification_preferences =
+        await sendGetAllowNotificationPreference(seller_id, "seller");
+      // create notification
+      if (allow_notification_preferences.feedback_notification) {
+        let contentData = "";
+        if (user_id === feedback.customer_id) {
+          contentData = `The customer [${user_id}] has deleted their feedback on your product [${feedback.product_id}]`;
+        } else {
+          contentData = `The seller [${seller_id}] has deleted your feedback on product [${feedback.product_id}]`;
+        }
+        const notificationData = {
+          title: "Feedback Deleted",
+          content: contentData,
+          notification_type: "feedback_notification",
+          target_type: "group",
+          target_ids: [feedback.customer_id, feedback.seller_id],
+          can_delete: true,
+          can_mark_as_read: false,
+          is_read: false,
+          created_at: new Date(),
+        };
+        await sendCreateNewNotification(notificationData);
+      }
 
       await FeedbackModel.delete(feedbackId);
       return { message: "Feedback deleted successfully" };
@@ -96,8 +170,8 @@ const FeedbackController = {
       );
 
       return await Promise.all(
-        feedbacks.map(async (feedback) => {
-          const userInfo = await getUserById(feedback.customer_id);
+        feedbacks.data.map(async (feedback) => {
+          const userInfo = await getUserById(feedback.customer_id, "customer");
           return { ...feedback, username: userInfo.username };
         })
       );

@@ -94,7 +94,7 @@ const FeedbackModel = {
         .toArray();
       return {
         message: "Feedbacks retrieved successfully",
-        feedbacks,
+        data: feedbacks,
         total: await collection.countDocuments({ product_id: productId }),
       };
     }),
