@@ -10,11 +10,9 @@ const startGetProductByIdConsumer = async () => {
     const queue = "get_product_by_id_queue";
 
     await channel.assertQueue(queue, { durable: false });
-    console.log(`[Product Service] Waiting for messages in ${queue}`);
 
     channel.consume(queue, async (msg) => {
       const { productId } = JSON.parse(msg.content.toString());
-      console.log("Received request for productId:", productId);
 
       try {
         const product = await ProductModel.getProductById(productId);
@@ -50,7 +48,6 @@ const startUpdateStockConsumer = async () => {
     const queue = "update_stock_queue";
 
     await channel.assertQueue(queue, { durable: false });
-    console.log(`[Product Service] Waiting for messages in ${queue}`);
 
     channel.consume(queue, async (msg) => {
       const { productId, stockValue, sku, session } = JSON.parse(
@@ -63,7 +60,6 @@ const startUpdateStockConsumer = async () => {
           sku,
           session
         );
-        console.log("Stock updated successfully:", result);
       } catch (error) {
         console.error("Error updating stock:", error);
       }

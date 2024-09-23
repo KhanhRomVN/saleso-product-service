@@ -15,7 +15,7 @@ const COLLECTION_SCHEMA = Joi.object({
     comment: Joi.string().required(),
     created_at: Joi.date().default(Date.now),
     updated_at: Joi.date().default(Date.now),
-  }),
+  }).optional(),
   created_at: Joi.date().default(Date.now),
   updated_at: Joi.date().default(Date.now),
 }).options({ abortEarly: false });
@@ -43,11 +43,8 @@ const FeedbackModel = {
           400,
           "INVALID_FEEDBACK_DATA"
         );
-      const result = await collection.insertOne(feedbackData);
-      return {
-        message: "Feedback created successfully",
-        feedbackId: result.insertedId,
-      };
+
+      await collection.insertOne(feedbackData);
     }),
 
   reply: async (feedbackId, replyData) =>

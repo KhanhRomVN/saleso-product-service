@@ -10,7 +10,6 @@ const client = new Client({
 const connectElasticsearch = async () => {
   try {
     const { name } = await client.info();
-    console.log("Elasticsearch connected:", name);
     return client;
   } catch (error) {
     console.error("Elasticsearch connection error:", error);

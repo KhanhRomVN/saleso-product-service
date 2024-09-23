@@ -10,7 +10,6 @@ const startGetVariantBySkuConsumer = async () => {
     const queue = "get_variant_by_sku_queue";
 
     await channel.assertQueue(queue, { durable: false });
-    console.log(`Waiting for messages in ${queue}`);
 
     channel.consume(queue, async (msg) => {
       const content = JSON.parse(msg.content.toString());

@@ -7,12 +7,11 @@ const {
   sendCreateNewNotification,
 } = require("../queue/producers/notification-producer");
 const { handleRequest, createError } = require("../services/responseHandler");
-const { trusted } = require("mongoose");
 
 const FeedbackController = {
   create: (req, res) =>
     handleRequest(req, res, async (req) => {
-      const { product_id, rating, comment, images = [], reply = {} } = req.body;
+      const { product_id, rating, comment, images = [] } = req.body;
       if (!product_id || !rating || !comment) {
         throw createError("Missing required fields", 400, "MISSING_FIELDS");
       }
@@ -30,7 +29,6 @@ const FeedbackController = {
         rating,
         comment,
         images,
-        reply,
         created_at: new Date(),
         updated_at: new Date(),
       };
