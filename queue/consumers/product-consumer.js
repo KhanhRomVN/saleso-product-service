@@ -50,22 +50,66 @@ const startUpdateStockConsumer = async () => {
     await channel.assertQueue(queue, { durable: false });
 
     channel.consume(queue, async (msg) => {
-      const { productId, stockValue, sku, session } = JSON.parse(
-        msg.content.toString()
-      );
+      const { productId, stockValue, sku } = JSON.parse(msg.content.toString());
+
       try {
-        const result = await ProductModel.updateStock(
-          productId,
-          stockValue,
-          sku,
-          session
+        await ProductModel.updateStock(productId, stockValue, sku);
+        channel.sendToQueue(
+          msg.properties.replyTo,
+          Buffer.from(JSON.stringify({ success: true })),
+          { correlationId: msg.properties.correlationId }
         );
       } catch (error) {
         console.error("Error updating stock:", error);
+        channel.sendToQueue(
+          msg.properties.replyTo,
+          Buffer.from(JSON.stringify({ error: error.message })),
+          { correlationId: msg.properties.correlationId }
+        );
       }
+
+      channel.ack(msg);
     });
   } catch (error) {
-    console.error("Error in updateStockConsumer:", error);
+    console.error("Error in startUpdateStockConsumer:", error);
+    if (channel) await channel.close();
+    if (connection) await connection.close();
+  }
+};
+
+const startGetProductBySellerIdConsumer = async () => {
+  let connection;
+  let channel;
+  try {
+    connection = await amqp.connect(process.env.RABBITMQ_URL);
+    channel = await connection.createChannel();
+    const queue = "get_products_by_seller_id_queue";
+
+    await channel.assertQueue(queue, { durable: false });
+
+    channel.consume(queue, async (msg) => {
+      const { sellerId } = JSON.parse(msg.content.toString());
+
+      try {
+        const products = await ProductModel.getListProductBySellerId(sellerId);
+        channel.sendToQueue(
+          msg.properties.replyTo,
+          Buffer.from(JSON.stringify(products)),
+          { correlationId: msg.properties.correlationId }
+        );
+      } catch (error) {
+        console.error("Error fetching products by seller ID:", error);
+        channel.sendToQueue(
+          msg.properties.replyTo,
+          Buffer.from(JSON.stringify({ error: error.message })),
+          { correlationId: msg.properties.correlationId }
+        );
+      }
+
+      channel.ack(msg);
+    });
+  } catch (error) {
+    console.error("Error in startGetProductBySellerIdConsumer:", error);
     if (channel) await channel.close();
     if (connection) await connection.close();
   }
@@ -74,4 +118,5 @@ const startUpdateStockConsumer = async () => {
 module.exports = {
   startGetProductByIdConsumer,
   startUpdateStockConsumer,
+  startGetProductBySellerIdConsumer,
 };

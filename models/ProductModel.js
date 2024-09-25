@@ -302,12 +302,11 @@ const ProductModel = {
       };
     }),
 
-  updateStock: async (product_id, stockValue, sku, session = null) =>
+  updateStock: async (product_id, stockValue, sku) =>
     handleDBOperation(async (collection) => {
       await collection.updateOne(
         { _id: new ObjectId(product_id), "variants.sku": sku },
-        { $inc: { "variants.$.stock": stockValue } },
-        { session }
+        { $inc: { "variants.$.stock": stockValue } }
       );
     }),
 

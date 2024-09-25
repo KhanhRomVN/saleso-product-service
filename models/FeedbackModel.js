@@ -81,13 +81,14 @@ const FeedbackModel = {
       return feedback;
     }),
 
-  getByProduct: async (productId, skip, limit) =>
+  getByProduct: async (productId, page) =>
     handleDBOperation(async (collection) => {
+      const skip = (page - 1) * 10;
       const feedbacks = await collection
         .find({ product_id: productId })
         .sort({ created_at: -1 })
         .skip(skip)
-        .limit(limit)
+        .limit(10)
         .toArray();
       return {
         message: "Feedbacks retrieved successfully",
@@ -96,19 +97,19 @@ const FeedbackModel = {
       };
     }),
 
-  getBySeller: async ({ seller_id, product_id, customer_id, page, limit }) =>
+  getBySeller: async ({ seller_id, product_id, customer_id, page }) =>
     handleDBOperation(async (collection) => {
       const filters = {
         seller_id,
         ...(product_id && { product_id }),
         ...(customer_id && { customer_id }),
       };
-      const skip = (page - 1) * limit;
+      const skip = (page - 1) * 10;
       const feedbacks = await collection
         .find(filters)
         .sort({ created_at: -1 })
         .skip(skip)
-        .limit(limit)
+        .limit(10)
         .toArray();
       return {
         message: "Feedbacks retrieved successfully",
@@ -119,59 +120,10 @@ const FeedbackModel = {
 
   getAverageRatingForProduct: async (product_id) =>
     handleDBOperation(async (collection) => {
-      if (!ObjectId.isValid(product_id))
-        throw createError("Invalid product ID", 400, "INVALID_PRODUCT_ID");
+      const feedbacks = await collection.find({ product_id }).toArray();
+      const totalReviews = feedbacks.length;
 
-      const result = await collection
-        .aggregate([
-          { $match: { product_id: product_id } },
-          {
-            $group: {
-              _id: null,
-              averageRating: { $avg: "$rating" },
-              totalReviews: { $sum: 1 },
-              ratingCounts: {
-                $push: {
-                  rating: "$rating",
-                  count: 1,
-                },
-              },
-            },
-          },
-          { $unwind: "$ratingCounts" },
-          {
-            $group: {
-              _id: "$ratingCounts.rating",
-              count: { $sum: "$ratingCounts.count" },
-              averageRating: { $first: "$averageRating" },
-              totalReviews: { $first: "$totalReviews" },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              averageRating: { $first: "$averageRating" },
-              totalReviews: { $first: "$totalReviews" },
-              ratingDistribution: {
-                $push: {
-                  rating: "$_id",
-                  count: "$count",
-                },
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              averageRating: { $round: ["$averageRating", 1] },
-              totalReviews: 1,
-              ratingDistribution: 1,
-            },
-          },
-        ])
-        .toArray();
-
-      if (result.length === 0) {
+      if (totalReviews === 0) {
         return {
           averageRating: 0,
           totalReviews: 0,
@@ -185,19 +137,20 @@ const FeedbackModel = {
         };
       }
 
-      const fullRatingDistribution = [1, 2, 3, 4, 5].map((rating) => {
-        const found = result[0].ratingDistribution.find(
-          (r) => r.rating === rating
-        );
-        return found ? found : { rating, count: 0 };
-      });
+      const ratingDistribution = [1, 2, 3, 4, 5].map((rating) => ({
+        rating,
+        count: feedbacks.filter((feedback) => feedback.rating === rating)
+          .length,
+      }));
+
+      const averageRating =
+        feedbacks.reduce((sum, feedback) => sum + feedback.rating, 0) /
+        totalReviews;
 
       return {
-        message: "Average rating retrieved successfully",
-        data: {
-          ...result[0],
-          ratingDistribution: fullRatingDistribution,
-        },
+        averageRating,
+        totalReviews,
+        ratingDistribution,
       };
     }),
 };

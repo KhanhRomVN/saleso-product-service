@@ -28,7 +28,7 @@ const handleDBOperation = async (operation) => {
 };
 
 const DiscountUsageModel = {
-  async newDiscountUsage(customer_id, discount_id, product_id, discount_cost) {
+  async newDiscountUsage(discount_id, customer_id, product_id, discount_cost) {
     return handleDBOperation(async (collection) => {
       const currentDate = new Date();
       const year = currentDate.getFullYear();
@@ -60,6 +60,16 @@ const DiscountUsageModel = {
   async getDiscountUsageByDiscountId(discount_id) {
     return handleDBOperation(async (collection) => {
       const discountUsage = await collection.find({ discount_id }).toArray();
+      return discountUsage;
+    });
+  },
+
+  async getDiscountUsageByProductIdAndCustomerId(product_id, customer_id) {
+    return handleDBOperation(async (collection) => {
+      console.log(product_id, customer_id);
+      const discountUsage = await collection
+        .find({ product_id, customer_id })
+        .toArray();
       return discountUsage;
     });
   },

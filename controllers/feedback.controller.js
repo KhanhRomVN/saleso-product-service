@@ -158,14 +158,8 @@ const FeedbackController = {
 
   getByProduct: (req, res) =>
     handleRequest(req, res, async (req) => {
-      const { productId } = req.params;
-      const { page = 1, limit = 10 } = req.query;
-      const skip = (page - 1) * limit;
-      const feedbacks = await FeedbackModel.getByProduct(
-        productId,
-        skip,
-        limit
-      );
+      const { productId, page = 1 } = req.params;
+      const feedbacks = await FeedbackModel.getByProduct(productId, page);
 
       return await Promise.all(
         feedbacks.data.map(async (feedback) => {
@@ -177,21 +171,20 @@ const FeedbackController = {
 
   getBySeller: (req, res) =>
     handleRequest(req, res, async (req) => {
-      const { product_id, customer_id, page = 1, limit = 10 } = req.body;
+      const { product_id, customer_id, page = 1 } = req.body;
       const seller_id = req.user._id.toString();
-
       const params = {
         seller_id,
         product_id,
         customer_id,
         page: parseInt(page),
-        limit: parseInt(limit),
       };
 
       const feedbackList = await FeedbackModel.getBySeller(params);
+
       return await Promise.all(
-        feedbackList.map(async (feedback) => {
-          const userInfo = await getUserById(feedback.customer_id);
+        feedbackList.feedbacks.map(async (feedback) => {
+          const userInfo = await getUserById(feedback.customer_id, "customer");
           return { ...feedback, customer_username: userInfo.username };
         })
       );
@@ -200,6 +193,7 @@ const FeedbackController = {
   getProductRating: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { productId } = req.params;
+      console.log(productId);
       return await FeedbackModel.getAverageRatingForProduct(productId);
     }),
 };

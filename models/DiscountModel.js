@@ -175,6 +175,15 @@ const DiscountModel = {
     });
   },
 
+  useDiscount: async (discount_id) => {
+    return handleDBOperation(async (collection) => {
+      await collection.updateOne(
+        { _id: new ObjectId(discount_id) },
+        { $inc: { current_uses: 1 } }
+      );
+    });
+  },
+
   applyDiscount: async (discount_id, product_id) => {
     return handleDBOperation(async (collection) => {
       const result = await collection.updateOne(

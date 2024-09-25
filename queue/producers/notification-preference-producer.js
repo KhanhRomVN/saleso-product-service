@@ -71,6 +71,5 @@ function generateUuid() {
 }
 
 module.exports = {
-  sendNewNotificationPreference,
   sendGetAllowNotificationPreference,
 };

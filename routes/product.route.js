@@ -1,6 +1,6 @@
 const express = require("express");
 const { ProductController } = require("../controllers");
-const { authSellerToken } = require("../middleware/authToken");
+const { authSellerToken, authToken } = require("../middleware/authToken");
 const router = express.Router();
 
 const routes = [
@@ -24,6 +24,7 @@ const routes = [
   {
     method: "get",
     path: "/by-product-with-discount/:product_id",
+    middleware: [authToken],
     handler: ProductController.getDiscountByProductId,
   },
   {

@@ -1,18 +1,18 @@
-const { DiscountUsageModel } = require("../models");
-const { handleRequest, createError } = require("../services/responseHandler");
+const { DiscountUsageModel, DiscountModel } = require("../models");
+const { handleRequest } = require("../services/responseHandler");
 
 const DiscountUsageController = {
   newDiscountUsage: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { discount_id, product_id, discount_cost } = req.body;
       const customer_id = req.user._id.toString();
-      const discountUsage = await DiscountUsageModel.newDiscountUsage(
+      await DiscountModel.useDiscount(discount_id);
+      await DiscountUsageModel.newDiscountUsage(
         discount_id,
         customer_id,
         product_id,
         discount_cost
       );
-      return discountUsage;
     }),
 
   getDiscountUsageByDiscountId: (req, res) =>

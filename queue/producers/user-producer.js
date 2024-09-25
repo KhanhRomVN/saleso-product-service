@@ -4,6 +4,11 @@ const getUserById = async (userId, role) => {
   let connection;
   let channel;
   try {
+    if (!role) {
+      return {
+        error: "Role is required",
+      };
+    }
     connection = await amqp.connect(process.env.RABBITMQ_URL);
     channel = await connection.createChannel();
     const queue = "get_user_by_id_queue";

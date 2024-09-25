@@ -3,6 +3,7 @@ const {
   DiscountModel,
   FeedbackModel,
   ProductLogModel,
+  DiscountUsageModel,
 } = require("../models");
 const {
   sendGetAllowNotificationPreference,
@@ -122,7 +123,6 @@ const ProductController = {
   getProductsBySellerId: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { minimum = false } = req.body;
-      console.log(req.user);
       const products = await ProductModel.getListProductBySellerId(
         req.user._id.toString()
       );
@@ -179,15 +179,37 @@ const ProductController = {
   getDiscountByProductId: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { product_id } = req.params;
+      const customer_id = req.user._id.toString();
+      const role = req.user.role;
       const product = await ProductModel.getProductById(product_id);
 
-      return product.ongoing_discounts.length > 0
-        ? Promise.all(
-            product.ongoing_discounts.map((id) =>
-              DiscountModel.getDiscountById(id)
+      const discounts =
+        product.ongoing_discounts.length > 0
+          ? await Promise.all(
+              product.ongoing_discounts.map((id) =>
+                DiscountModel.getDiscountById(id)
+              )
             )
-          )
-        : [];
+          : [];
+
+      if (role === "customer") {
+        const discountUsage =
+          await DiscountUsageModel.getDiscountUsageByProductIdAndCustomerId(
+            product_id,
+            customer_id
+          );
+
+        const filteredDiscounts = discounts.filter((discount) => {
+          const usageCount = discountUsage.filter(
+            (usage) => usage.discount_id.toString() === discount._id.toString()
+          ).length;
+          return usageCount < discount.customer_usage_limit;
+        });
+
+        return filteredDiscounts;
+      } else {
+        return discounts;
+      }
     }),
 
   getFlashSaleProducts: (req, res) =>
@@ -354,7 +376,6 @@ const ProductController = {
   filterProducts: (req, res) =>
     handleRequest(req, res, async (req) => {
       const { value, rating, address, page = 1, limit = 32 } = req.body;
-      console.log(req.body);
 
       const query = {
         bool: {

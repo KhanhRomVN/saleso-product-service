@@ -28,7 +28,7 @@ const routes = [
   },
   {
     method: "get",
-    path: "/product/:productId",
+    path: "/product/:productId/:page",
     handler: FeedbackController.getByProduct,
   },
   {
@@ -38,8 +38,8 @@ const routes = [
     handler: FeedbackController.getBySeller,
   },
   {
-    method: "get",
-    path: "/product/:productId/rating",
+    method: "post",
+    path: "/product/rating/:productId",
     handler: FeedbackController.getProductRating,
   },
 ];

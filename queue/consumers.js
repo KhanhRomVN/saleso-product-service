@@ -1,6 +1,7 @@
 const {
   startGetProductByIdConsumer,
   startUpdateStockConsumer,
+  startGetProductBySellerIdConsumer,
 } = require("./consumers/product-consumer");
 const {
   startGetVariantBySkuConsumer,
@@ -10,6 +11,7 @@ const runAllConsumers = async () => {
   await startGetProductByIdConsumer();
   await startUpdateStockConsumer();
   await startGetVariantBySkuConsumer();
+  await startGetProductBySellerIdConsumer();
 };
 
 module.exports = {
